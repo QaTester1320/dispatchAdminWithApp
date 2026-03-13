@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dispatch OS - Full Enterprise Sandbox</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        :root {
+            --admin-blue: #0f172a; --admin-accent: #3b82f6; --app-bg: #f3f4f6;
+            --success: #22c55e; --danger: #ef4444; --warning: #f59e0b;
+        }
+        * { box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        body { margin: 0; display: flex; height: 100vh; background: #e2e8f0; overflow: hidden; }
+
+        /* ADMIN PANEL STYLES */
+        #admin-container { flex: 3; display: flex; background: #fff; }
+        .sidebar { width: 260px; background: var(--admin-blue); color: white; padding: 20px; }
+        .sidebar h2 { color: var(--admin-accent); font-size: 1.2rem; margin-bottom: 30px; }
+        .nav-item { padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 8px; transition: 0.2s; }
+        .nav-item:hover, .nav-item.active { background: rgba(255,255,255,0.1); color: var(--admin-accent); }
+        .content-area { flex: 1; padding: 30px; overflow-y: auto; background: #f8fafc; }
+        .card { background: white; border: 1px solid #e2e8f0; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
+        th, td { text-align: left; padding: 15px; border-bottom: 1px solid #f1f5f9; }
+        th { background: #f8fafc; font-weight: 600; color: #64748b; }
+
+        /* MOBILE APP STYLES */
+        #mobile-container { flex: 1.8; display: flex; justify-content: center; align-items: center; background: #cbd5e1; border-left: 1px solid #94a3b8; }
+        .phone { width: 340px; height: 700px; background: #000; border-radius: 50px; padding: 12px; position: relative; box-shadow: 0 40px 80px rgba(0,0,0,0.3); }
+        .screen { width: 100%; height: 100%; background: var(--app-bg); border-radius: 38px; overflow: hidden; position: relative; display: flex; flex-direction: column; }
+        .app-header { background: white; padding: 45px 20px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; }
+        .side-menu { position: absolute; top: 0; left: -100%; width: 85%; height: 100%; background: white; z-index: 100; transition: 0.3s; padding: 60px 20px; }
+        .side-menu.open { left: 0; }
+        .menu-link { padding: 18px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-weight: 500; }
+        .btn-main { background: var(--admin-accent); color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: 600; }
+        .hidden { display: none !important; }
+        
+        /* STATUS BADGES */
+        .badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
+        .status-Pending { background: #ffedd5; color: #9a3412; }
+        .status-Route { background: #dbeafe; color: #1e40af; }
+        .status-Completed { background: #dcfce7; color: #166534; }
+
+        /* CHAT UI */
+        .chat-box { height: 350px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 10px; }
+        .msg { padding: 8px 12px; border-radius: 12px; max-width: 80%; font-size: 13px; }
+        .msg.admin { align-self: flex-start; background: #e2e8f0; }
+        .msg.app { align-self: flex-end; background: var(--admin-accent); color: white; }
+    </style>
+</head>
+<body>
+
+<div id="admin-container">
+    <div class="sidebar">
+        <h2>DISPATCH PRO</h2>
+        <div class="nav-item active" onclick="showAdminTab('orders')">Trips & Orders</div>
+        <div class="nav-item" onclick="showAdminTab('drivers')">Driver Management</div>
+        <div class="nav-item" onclick="showAdminTab('chat-admin')">Live Chat <span id="chat-alert" style="color:red; display:none;">●</span></div>
+    </div>
+
+    <div class="content-area">
+        <div id="tab-orders" class="admin-tab">
+            <h3>Create New Trip</h3>
+            <div class="card" style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <input type="text" id="order-id" placeholder="Order ID (e.g. #99)">
+                <select id="driver-sel-admin"></select>
+                <input type="text" id="order-loc" placeholder="Location">
+                <input type="number" id="driver-fee" placeholder="Driver Charge ($)">
+                <button class="btn-main" style="grid-column: span 2;" onclick="createTrip()">Assign Trip</button>
+            </div>
+            <h3>Active & Historical Records</h3>
+            <table>
+                <thead><tr><th>Trip ID</th><th>Driver</th><th>Location</th><th>Status</th></tr></thead>
+                <tbody id="admin-trip-list"></tbody>
+            </table>
+        </div>
+
+        <div id="tab-drivers" class="admin-tab hidden">
+            <h3>Driver Onboarding</h3>
+            <div class="card">
+                <input type="text" id="new-driver-name" placeholder="Full Name" style="margin-right:10px;">
+                <input type="text" id="new-driver-user" placeholder="Username">
+                <button class="btn-main" onclick="addDriver()">Register Driver</button>
+            </div>
+            <div class="card">
+                <h4>Registered Drivers</h4>
+                <ul id="driver-list-display"></ul>
+            </div>
+        </div>
+
+        <div id="tab-chat-admin" class="admin-tab hidden">
+            <h3>Dispatcher Chat</h3>
+            <div id="admin-chat-view" class="card chat-box"></div>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="admin-msg-input" placeholder="Type message..." style="flex:1; padding:10px;">
+                <button class="btn-main" style="width:100px;" onclick="sendChat('admin')">Send</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="mobile-container">
+    <div class="phone">
+        <div class="screen">
+            <div id="app-side-menu" class="side-menu">
+                <div class="menu-link" onclick="showAppPage('app-dash')">🏠 Dashboard</div>
+                <div class="menu-link" onclick="showAppPage('app-punch')">⏱️ Punch Clock</div>
+                <div class="menu-link" onclick="showAppPage('app-chat')">💬 Chat</div>
+                <div class="menu-link" onclick="showAppPage('app-profile')">👤 Profile</div>
+                <div class="menu-link" style="color:var(--danger)" onclick="appLogout()">🚪 Logout</div>
+            </div>
+
+            <div id="app-login" style="padding: 60px 20px;">
+                <h2 style="text-align:center">Driver Access</h2>
+                <input type="text" id="app-user-input" placeholder="Username" class="btn-main" style="background:white; color:black; border:1px solid #ccc; margin-bottom:15px;">
+                <button class="btn-main" onclick="appLogin()">Login</button>
+            </div>
+
+            <div id="app-main" class="hidden">
+                <div class="app-header">
+                    <div onclick="toggleMenu()" style="cursor:pointer; font-size:20px;">☰</div>
+                    <div id="app-page-title" style="font-weight:700">Dashboard</div>
+                    <div id="app-notif" style="color:var(--danger); opacity:0;">🔔</div>
+                </div>
+
+                <div id="app-content" style="padding:15px; height:100%; overflow-y:auto;">
+                    
+                    <div id="app-dash" class="app-page">
+                        <div id="app-no-trips" class="card">No trips assigned.</div>
+                        <div id="app-trip-card" class="card hidden">
+                            <span id="app-status-badge" class="badge"></span>
+                            <h3 id="app-trip-id"></h3>
+                            <p id="app-trip-loc" style="font-size:14px; color:#666"></p>
+                            <button id="ack-btn" class="btn-main" onclick="updateTripStatus('Route')">Acknowledge & Start</button>
+                            <button id="done-btn" class="btn-main hidden" style="background:var(--success)" onclick="showAppPage('app-pod')">Complete Delivery</button>
+                        </div>
+                    </div>
+
+                    <div id="app-punch" class="app-page hidden">
+                        <h4>Attendance</h4>
+                        <select id="truck-select" class="btn-main" style="background:white; color:black; border:1px solid #ccc;">
+                            <option>Volvo - TRK-01</option><option>Mack - TRK-02</option>
+                        </select>
+                        <button id="punch-btn" class="btn-main" onclick="handlePunch()">Punch In</button>
+                        <div id="punch-history" style="margin-top:20px; font-size:12px;"></div>
+                    </div>
+
+                    <div id="app-chat" class="app-page hidden">
+                        <div id="app-chat-view" class="chat-box" style="height:380px;"></div>
+                        <div style="display:flex; gap:5px; margin-top:10px;">
+                            <input type="text" id="app-msg-input" style="flex:1; border-radius:5px; border:1px solid #ccc; padding:5px;">
+                            <button onclick="sendChat('app')" style="background:var(--admin-accent); color:white; border:none; padding:5px 10px; border-radius:5px;">Send</button>
+                        </div>
+                    </div>
+
+                    <div id="app-pod" class="app-page hidden">
+                        <h4>Sign POD</h4>
+                        <input type="text" id="cust-sign-name" placeholder="Receiver Name" style="width:100%; padding:10px; margin-bottom:10px;">
+                        <canvas id="pod-canvas" style="border:2px dashed #ccc; width:100%; height:120px; background:white;"></canvas>
+                        <button class="btn-main" onclick="finalizeTrip()">Generate PDF & Finish</button>
+                    </div>
+
+                    <div id="app-profile" class="app-page hidden">
+                        <h4>My Profile</h4>
+                        <div class="card">
+                            <p id="prof-name"></p>
+                            <button class="btn-main">Change Password</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- DATABASE & PERSISTENCE ---
+    let db = JSON.parse(localStorage.getItem('dispatch_v3')) || {
+        drivers: [{name: 'John Doe', user: 'john'}],
+        trips: [],
+        punches: [],
+        chats: []
+    };
+
+    function save() {
+        localStorage.setItem('dispatch_v3', JSON.stringify(db));
+        renderAdmin();
+        renderApp();
+    }
+
+    // --- ADMIN LOGIC ---
+    function addDriver() {
+        const name = document.getElementById('new-driver-name').value;
+        const user = document.getElementById('new-driver-user').value;
+        if(name && user) {
+            db.drivers.push({name, user});
+            save();
+            document.getElementById('new-driver-name').value = '';
+            document.getElementById('new-driver-user').value = '';
+        }
+    }
+
+    function createTrip() {
+        const id = document.getElementById('order-id').value;
+        const driver = document.getElementById('driver-sel-admin').value;
+        const loc = document.getElementById('order-loc').value;
+        if(id && driver) {
+            db.trips.push({ id, driver, loc, status: 'Pending', timestamp: new Date().toLocaleTimeString() });
+            save();
+            document.getElementById('app-notif').style.opacity = 1;
+        }
+    }
+
+    function renderAdmin() {
+        // Driver Dropdown
+        const sel = document.getElementById('driver-sel-admin');
+        sel.innerHTML = db.drivers.map(d => `<option value="${d.user}">${d.name}</option>`).join('');
+        
+        // Driver List
+        document.getElementById('driver-list-display').innerHTML = db.drivers.map(d => `<li>${d.name} (${d.user})</li>`).join('');
+
+        // Trip List (Now including historical completed ones)
+        document.getElementById('admin-trip-list').innerHTML = db.trips.map(t => `
+            <tr>
+                <td>#${t.id}</td>
+                <td>${t.driver}</td>
+                <td>${t.loc}</td>
+                <td><span class="badge status-${t.status}">${t.status}</span></td>
+            </tr>
+        `).join('');
+
+        // Chat
+        renderChat();
+    }
+
+    // --- APP LOGIC ---
+    let loggedDriver = null;
+    function appLogin() {
+        const user = document.getElementById('app-user-input').value;
+        const found = db.drivers.find(d => d.user === user);
+        if(found) {
+            loggedDriver = found;
+            document.getElementById('app-login').classList.add('hidden');
+            document.getElementById('app-main').classList.remove('hidden');
+            document.getElementById('prof-name').innerText = "Driver: " + found.name;
+            save();
+        } else { alert("User not found"); }
+    }
+
+    function renderApp() {
+        if(!loggedDriver) return;
+        const trip = db.trips.find(t => t.driver === loggedDriver.user && t.status !== 'Completed');
+        
+        if(trip) {
+            document.getElementById('app-no-trips').classList.add('hidden');
+            document.getElementById('app-trip-card').classList.remove('hidden');
+            document.getElementById('app-trip-id').innerText = "Order #" + trip.id;
+            document.getElementById('app-trip-loc').innerText = "📍 " + trip.loc;
+            document.getElementById('app-status-badge').innerText = trip.status;
+            document.getElementById('app-status-badge').className = "badge status-" + trip.status;
+            
+            if(trip.status === 'Route') {
+                document.getElementById('ack-btn').classList.add('hidden');
+                document.getElementById('done-btn').classList.remove('hidden');
+            } else {
+                document.getElementById('ack-btn').classList.remove('hidden');
+                document.getElementById('done-btn').classList.add('hidden');
+            }
+        } else {
+            document.getElementById('app-no-trips').classList.remove('hidden');
+            document.getElementById('app-trip-card').classList.add('hidden');
+        }
+
+        // Punches
+        const myPunches = db.punches.filter(p => p.user === loggedDriver.user);
+        document.getElementById('punch-history').innerHTML = myPunches.map(p => `<div>${p.time} - ${p.type} (${p.truck})</div>`).join('');
+    }
+
+    function updateTripStatus(newStatus) {
+        const trip = db.trips.find(t => t.driver === loggedDriver.user && t.status !== 'Completed');
+        if(trip) {
+            trip.status = newStatus;
+            save();
+        }
+    }
+
+    function handlePunch() {
+        const isPunchingIn = document.getElementById('punch-btn').innerText === "Punch In";
+        db.punches.push({
+            user: loggedDriver.user,
+            time: new Date().toLocaleString(),
+            type: isPunchingIn ? "IN" : "OUT",
+            truck: document.getElementById('truck-select').value
+        });
+        document.getElementById('punch-btn').innerText = isPunchingIn ? "Punch Out" : "Punch In";
+        document.getElementById('punch-btn').style.background = isPunchingIn ? "var(--danger)" : "var(--admin-accent)";
+        save();
+    }
+
+    function sendChat(source) {
+        const input = document.getElementById(source + '-msg-input');
+        if(!input.value) return;
+        db.chats.push({ source, text: input.value, user: loggedDriver?.user || 'admin' });
+        input.value = '';
+        save();
+        if(source === 'app') document.getElementById('chat-alert').style.display = 'inline';
+    }
+
+    function renderChat() {
+        const chatHtml = db.chats.map(c => `<div class="msg ${c.source}">${c.text}</div>`).join('');
+        document.getElementById('admin-chat-view').innerHTML = chatHtml;
+        document.getElementById('app-chat-view').innerHTML = chatHtml;
+    }
+
+    function finalizeTrip() {
+        const trip = db.trips.find(t => t.driver === loggedDriver.user && t.status === 'Route');
+        if(trip) {
+            trip.status = 'Completed';
+            save();
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            doc.text("DELIVERY PROOF", 20, 20);
+            doc.text(`Trip ID: ${trip.id}`, 20, 30);
+            doc.text(`Driver: ${loggedDriver.name}`, 20, 40);
+            doc.text(`Receiver: ${document.getElementById('cust-sign-name').value}`, 20, 50);
+            doc.save(`Trip_${trip.id}_POD.pdf`);
+            showAppPage('app-dash');
+        }
+    }
+
+    // UI NAVIGATION
+    function showAdminTab(t) { 
+        document.querySelectorAll('.admin-tab').forEach(x => x.classList.add('hidden'));
+        document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
+        document.getElementById('tab-' + t).classList.remove('hidden');
+        event.currentTarget.classList.add('active');
+        if(t === 'chat-admin') document.getElementById('chat-alert').style.display = 'none';
+    }
+
+    function showAppPage(p) {
+        document.querySelectorAll('.app-page').forEach(x => x.classList.add('hidden'));
+        document.getElementById(p).classList.remove('hidden');
+        document.getElementById('app-page-title').innerText = p.replace('app-', '').toUpperCase();
+        toggleMenu(false);
+    }
+
+    function toggleMenu(force) { document.getElementById('app-side-menu').classList.toggle('open', force); }
+    function appLogout() { location.reload(); }
+
+    renderAdmin();
+</script>
+</body>
+</html>
