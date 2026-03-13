@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Dispatch OS - V6 Stable</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        :root {
+            --admin-dark: #0f172a; --admin-accent: #3b82f6; --app-bg: #f8fafc;
+            --success: #10b981; --danger: #ef4444; --warning: #f59e0b;
+        }
+        * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+        body { margin: 0; display: flex; height: 100vh; background: #64748b; overflow: hidden; }
+
+        /* --- ADMIN PANEL --- */
+        #admin-panel { flex: 3; display: flex; background: #fff; border-right: 2px solid #334155; }
+        .sidebar { width: 260px; background: var(--admin-dark); color: white; padding: 20px; }
+        .nav-item { padding: 12px; cursor: pointer; border-radius: 8px; margin-bottom: 8px; }
+        .nav-item.active { background: var(--admin-accent); }
+        .admin-main { flex: 1; padding: 25px; overflow-y: auto; background: #f1f5f9; }
+        .card { background: white; border: 1px solid #e2e8f0; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        input, select, textarea { padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; margin-bottom: 12px; }
+        table { width: 100%; border-collapse: collapse; background: white; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #edf2f7; }
+
+        /* --- MOBILE APP --- */
+        #mobile-simulator { flex: 1.5; display: flex; justify-content: center; align-items: center; }
+        .phone { width: 360px; height: 740px; background: #000; border-radius: 50px; padding: 12px; position: relative; border: 4px solid #334155; }
+        .screen { width: 100%; height: 100%; background: var(--app-bg); border-radius: 38px; overflow: hidden; position: relative; display: flex; flex-direction: column; }
+        .app-header { background: white; padding: 45px 20px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; }
+        .side-menu { position: absolute; top: 0; left: -100%; width: 85%; height: 100%; background: white; z-index: 1000; transition: 0.3s; padding: 60px 20px; }
+        .side-menu.open { left: 0; }
+        .menu-link { padding: 16px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-weight: 600; }
+
+        /* --- CHAT ENGINE --- */
+        .chat-box { height: 350px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 15px; background: #fff; border-radius: 8px; }
+        .msg { padding: 10px 14px; border-radius: 15px; max-width: 80%; font-size: 13px; line-height: 1.4; position: relative; }
+        
+        /* ADMIN VIEW ALIGNMENT */
+        #admin-chat-messages .sent { align-self: flex-end; background: var(--admin-accent); color: white; border-bottom-right-radius: 2px; }
+        #admin-chat-messages .received { align-self: flex-start; background: #e2e8f0; color: #1e293b; border-bottom-left-radius: 2px; }
+        
+        /* APP VIEW ALIGNMENT */
+        #app-chat-messages .sent { align-self: flex-end; background: var(--admin-accent); color: white; border-bottom-right-radius: 2px; }
+        #app-chat-messages .received { align-self: flex-start; background: #e2e8f0; color: #1e293b; border-bottom-left-radius: 2px; }
+
+        .btn { padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: 700; width: 100%; margin-top: 5px; }
+        .btn-primary { background: var(--admin-accent); color: white; }
+        #sig-canvas { border: 2px dashed #94a3b8; width: 100%; height: 140px; background: white; touch-action: none; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div id="admin-panel">
+    <div class="sidebar">
+        <h2>DISPATCH OS</h2>
+        <div class="nav-item active" onclick="switchAdminTab('orders')">📦 Trips</div>
+        <div class="nav-item" onclick="switchAdminTab('drivers')">👥 Drivers</div>
+        <div class="nav-item" onclick="switchAdminTab('chat')">💬 Chats <span id="admin-notif" style="color:#fbbf24; display:none;">●</span></div>
+    </div>
+
+    <div class="admin-main">
+        <div id="tab-orders" class="admin-tab">
+            <h3>Dispatch New Order</h3>
+            <div class="card" style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                <input type="text" id="t-id" placeholder="Trip ID">
+                <select id="t-driver"></select>
+                <select id="t-loc">
+                    <option value="">-- Select Location --</option>
+                    <option>Terminal A - New York</option>
+                    <option>Terminal B - Los Angeles</option>
+                    <option>Distribution Center - Chicago</option>
+                    <option>Port of Houston</option>
+                </select>
+                <input type="number" id="t-charge" placeholder="Driver Fee ($)">
+                <input type="file" id="t-attach" style="grid-column: span 2;">
+                <button class="btn btn-primary" style="grid-column: span 2;" onclick="adminCreateTrip()">Create & Dispatch</button>
+            </div>
+            <table>
+                <thead><tr><th>Trip ID</th><th>Driver</th><th>Status</th><th>Fee</th><th>Action</th></tr></thead>
+                <tbody id="admin-trip-table"></tbody>
+            </table>
+        </div>
+
+        <div id="tab-drivers" class="admin-tab hidden">
+            <h3>Driver Registration</h3>
+            <div class="card">
+                <input type="text" id="d-name" placeholder="Full Name">
+                <input type="text" id="d-user" placeholder="Username">
+                <input type="password" id="d-pass" placeholder="Password">
+                <button class="btn btn-primary" onclick="adminCreateDriver()">Register Driver</button>
+            </div>
+            <div class="card"><h4>Registered Drivers</h4><ul id="admin-driver-list"></ul></div>
+        </div>
+
+        <div id="tab-chat" class="admin-tab hidden">
+            <div style="display:flex; gap:20px;">
+                <div id="chat-sidebar" style="width:200px; background:white; border-radius:12px; padding:10px; border:1px solid #e2e8f0;"></div>
+                <div class="card" style="flex:1;">
+                    <h4 id="chat-header">Select a Driver</h4>
+                    <div id="admin-chat-messages" class="chat-box" style="border:1px solid #eee"></div>
+                    <div style="display:flex; gap:8px; margin-top:10px;">
+                        <input type="text" id="admin-msg-input" placeholder="Type message to driver...">
+                        <button onclick="sendMsg('admin')" class="btn btn-primary" style="width:80px;">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="mobile-simulator">
+    <div class="phone">
+        <div class="screen">
+            <div id="app-side-menu" class="side-menu">
+                <div class="menu-link" onclick="appNav('app-dash')">🏠 Dashboard</div>
+                <div class="menu-link" onclick="appNav('app-punch')">⏱️ Punch Clock</div>
+                <div class="menu-link" onclick="appNav('app-chat')">💬 Messages</div>
+                <div class="menu-link" onclick="appNav('app-profile')">👤 Profile</div>
+                <div class="menu-link" style="color:var(--danger)" onclick="location.reload()">🚪 Logout</div>
+            </div>
+
+            <div id="app-login" style="padding: 60px 20px;">
+                <h2 style="text-align:center">Driver App</h2>
+                <input type="text" id="login-u" placeholder="Username">
+                <input type="password" id="login-p" placeholder="Password">
+                <button class="btn btn-primary" onclick="appHandleLogin()">Login</button>
+            </div>
+
+            <div id="app-ui" class="hidden">
+                <div class="app-header">
+                    <div onclick="toggleMenu()" style="cursor:pointer">☰</div>
+                    <div id="app-title">Dashboard</div>
+                    <div id="app-notif" style="color:var(--warning); display:none;">🔔</div>
+                </div>
+
+                <div id="app-content" style="padding:15px; flex:1; overflow-y:auto;">
+                    <div id="app-dash" class="app-page">
+                        <div id="app-trips-list"></div>
+                    </div>
+
+                    <div id="app-punch" class="app-page hidden">
+                        <h4>Truck Selection</h4>
+                        <select id="p-truck">
+                            <option>Semi Truck - A101</option>
+                            <option>Flatbed - B202</option>
+                            <option>Box Truck - C303</option>
+                        </select>
+                        <button id="p-btn" class="btn btn-primary" onclick="appHandlePunch()">Punch In</button>
+                        <button class="btn" style="margin-top:10px;" onclick="appShowPunchReport()">History</button>
+                        <div id="p-report" class="card hidden"></div>
+                    </div>
+
+                    <div id="app-chat" class="app-page hidden">
+                        <div id="app-chat-messages" class="chat-box" style="height:480px; border:1px solid #ddd"></div>
+                        <div style="display:flex; gap:5px; margin-top:10px;">
+                            <input type="text" id="app-msg-input" placeholder="Message Dispatcher...">
+                            <button onclick="sendMsg('app')" class="btn btn-primary">Send</button>
+                        </div>
+                    </div>
+
+                    <div id="app-profile" class="app-page hidden">
+                        <div class="card">
+                            <p id="prof-user"></p>
+                            <input type="password" id="prof-pass" placeholder="Change Password">
+                            <button class="btn btn-primary" onclick="appUpdatePass()">Save</button>
+                        </div>
+                    </div>
+
+                    <div id="app-trip-exec" class="app-page hidden">
+                        <div id="exec-details" class="card"></div>
+                        <div id="exec-actions"></div>
+                        <div id="exec-pod" class="card hidden">
+                            <h4>POD Completion</h4>
+                            <input type="text" id="pod-name" placeholder="Receiver Name">
+                            <canvas id="sig-canvas"></canvas>
+                            <button class="btn btn-primary" onclick="appFinalizeTrip()">Generate PDF</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let store = JSON.parse(localStorage.getItem('dispatch_v12')) || {
+        drivers: [{name: 'John Doe', user: 'john', pass: '123'}],
+        trips: [], punches: [], chats: {}
+    };
+
+    function sync() {
+        localStorage.setItem('dispatch_v12', JSON.stringify(store));
+        renderAdmin(); renderApp();
+    }
+
+    // --- ADMIN ---
+    function adminCreateDriver() {
+        const u = document.getElementById('d-user').value;
+        if(u) {
+            store.drivers.push({name: document.getElementById('d-name').value, user: u, pass: document.getElementById('d-pass').value});
+            store.chats[u] = [];
+            sync();
+        }
+    }
+
+    function adminCreateTrip() {
+        const id = document.getElementById('t-id').value;
+        if(id) {
+            store.trips.push({
+                id, driver: document.getElementById('t-driver').value,
+                loc: document.getElementById('t-loc').value, fee: document.getElementById('t-charge').value,
+                status: 'Pending', truck: ''
+            });
+            sync();
+        }
+    }
+
+    function renderAdmin() {
+        document.getElementById('t-driver').innerHTML = store.drivers.map(d => `<option value="${d.user}">${d.name}</option>`).join('');
+        document.getElementById('admin-driver-list').innerHTML = store.drivers.map(d => `<li>${d.name} (@${d.user})</li>`).join('');
+        document.getElementById('admin-trip-table').innerHTML = store.trips.map(t => `
+            <tr><td>${t.id}</td><td>${t.driver}</td><td>${t.status}</td><td>$${t.fee}</td>
+            <td><button onclick="store.trips=store.trips.filter(x=>x.id!='${t.id}');sync()">Del</button></td></tr>`).join('');
+        document.getElementById('chat-sidebar').innerHTML = store.drivers.map(d => `
+            <div onclick="adminSelectChat('${d.user}')" style="padding:10px; cursor:pointer; border-bottom:1px solid #eee;">${d.name}</div>`).join('');
+    }
+
+    // --- APP ---
+    let currentUser = null;
+    let currentTruck = "None";
+    let adminSelectedUser = null;
+
+    function appHandleLogin() {
+        const u = document.getElementById('login-u').value;
+        const p = document.getElementById('login-p').value;
+        currentUser = store.drivers.find(d => d.user === u && d.pass === p);
+        if(currentUser) {
+            document.getElementById('app-login').classList.add('hidden');
+            document.getElementById('app-ui').classList.remove('hidden');
+            document.getElementById('prof-user').innerText = "User: " + currentUser.name;
+            sync();
+        }
+    }
+
+    function renderApp() {
+        if(!currentUser) return;
+        // Dashboard
+        const myTrips = store.trips.filter(t => t.driver === currentUser.user);
+        document.getElementById('app-trips-list').innerHTML = myTrips.map(t => `
+            <div class="card" onclick="appOpenTrip('${t.id}')">
+                <strong>${t.id}</strong> - ${t.status}<br><small>${t.loc}</small>
+            </div>`).join('');
+
+        // Chat View (App Side)
+        const appMsgs = store.chats[currentUser.user] || [];
+        document.getElementById('app-chat-messages').innerHTML = appMsgs.map(m => `
+            <div class="msg ${m.sender === 'app' ? 'sent' : 'received'}">${m.text}</div>
+        `).join('');
+
+        // Chat View (Admin Side)
+        if(adminSelectedUser) {
+            const admMsgs = store.chats[adminSelectedUser] || [];
+            document.getElementById('admin-chat-messages').innerHTML = admMsgs.map(m => `
+                <div class="msg ${m.sender === 'admin' ? 'sent' : 'received'}">${m.text}</div>
+            `).join('');
+        }
+    }
+
+    function sendMsg(source) {
+        const input = document.getElementById(source + '-msg-input');
+        const text = input.value;
+        if(!text) return;
+
+        if(source === 'app') {
+            store.chats[currentUser.user].push({ sender: 'app', text });
+        } else if(source === 'admin' && adminSelectedUser) {
+            store.chats[adminSelectedUser].push({ sender: 'admin', text });
+        }
+        input.value = '';
+        sync();
+    }
+
+    function adminSelectChat(u) {
+        adminSelectedUser = u;
+        document.getElementById('chat-header').innerText = "Chatting with " + u;
+        sync();
+    }
+
+    // --- PUNCH ---
+    let punched = false;
+    function appHandlePunch() {
+        currentTruck = document.getElementById('p-truck').value;
+        store.punches.push({ user: currentUser.user, type: punched ? 'OUT' : 'IN', time: new Date().toLocaleString(), truck: currentTruck });
+        punched = !punched;
+        document.getElementById('p-btn').innerText = punched ? "Punch Out" : "Punch In";
+        sync();
+    }
+
+    function appShowPunchReport() {
+        const area = document.getElementById('p-report');
+        area.classList.toggle('hidden');
+        area.innerHTML = store.punches.filter(p => p.user === currentUser.user).map(l => `${l.type}: ${l.time} (${l.truck})`).join('<br>');
+    }
+
+    // --- TRIP EXEC ---
+    function appOpenTrip(id) {
+        const t = store.trips.find(x => x.id === id);
+        appNav('app-trip-exec');
+        document.getElementById('exec-details').innerHTML = `<h3>${t.id}</h3><p>${t.loc}</p><p>Truck: ${currentTruck}</p>`;
+        
+        let btns = "";
+        if(t.status === 'Pending') btns = `<button class="btn btn-primary" onclick="appUpdateTrip('${t.id}','Acknowledged')">Acknowledge</button>`;
+        else if(t.status === 'Acknowledged') btns = `<button class="btn btn-primary" onclick="appUpdateTrip('${t.id}','Started')">Start</button>`;
+        else if(t.status === 'Started') btns = `<button class="btn btn-primary" onclick="appUpdateTrip('${t.id}','Completed')">Complete</button>`;
+        else if(t.status === 'Completed') btns = `<button class="btn btn-primary" onclick="document.getElementById('exec-pod').classList.remove('hidden');initCanvas()">Add POD</button>`;
+        
+        document.getElementById('exec-actions').innerHTML = btns;
+    }
+
+    function appUpdateTrip(id, status) {
+        const t = store.trips.find(x => x.id === id);
+        t.status = status;
+        if(status === 'Started') t.truck = currentTruck;
+        sync(); appOpenTrip(id);
+    }
+
+    // --- POD ---
+    let canvas, ctx, drawing = false;
+    function initCanvas() {
+        canvas = document.getElementById('sig-canvas');
+        ctx = canvas.getContext('2d');
+        canvas.onmousedown = canvas.ontouchstart = () => { drawing = true; ctx.beginPath(); };
+        canvas.onmouseup = canvas.ontouchend = () => drawing = false;
+        canvas.onmousemove = canvas.ontouchmove = (e) => {
+            if(!drawing) return;
+            const r = canvas.getBoundingClientRect();
+            const x = (e.clientX || e.touches[0].clientX) - r.left;
+            const y = (e.clientY || e.touches[0].clientY) - r.top;
+            ctx.lineTo(x, y); ctx.stroke();
+        };
+    }
+
+    function appFinalizeTrip() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        doc.text("POD COMPLETE", 20, 20);
+        doc.text("Truck: " + currentTruck, 20, 30);
+        doc.save("POD.pdf");
+        appNav('app-dash');
+    }
+
+    // --- UI HELPERS ---
+    function appNav(p) {
+        document.querySelectorAll('.app-page').forEach(x => x.classList.add('hidden'));
+        document.getElementById(p).classList.remove('hidden');
+        document.getElementById('app-side-menu').classList.remove('open');
+    }
+    function toggleMenu() { document.getElementById('app-side-menu').classList.toggle('open'); }
+    function switchAdminTab(t) {
+        document.querySelectorAll('.admin-tab').forEach(x => x.classList.add('hidden'));
+        document.getElementById('tab-'+t).classList.remove('hidden');
+    }
+    function appUpdatePass() { currentUser.pass = document.getElementById('prof-pass').value; sync(); }
+
+    renderAdmin();
+</script>
+</body>
+</html>
